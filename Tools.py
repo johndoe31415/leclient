@@ -54,6 +54,7 @@ class CertTools():
 	DNSNAME_SPLITTER = re.compile(r", ")
 	NOT_AFTER_REGEX = re.compile(r"notAfter=(?P<month>[A-Za-z]{3}) (?P<day>\d+) (?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2}) (?P<year>\d{4}) GMT")
 	MONTHS = { name: monthno for (monthno, name) in enumerate([ "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec" ], 1) }
+	CERT_REGEX = re.compile("^-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----$", flags = re.MULTILINE | re.DOTALL)
 
 	@classmethod
 	def create_csr(cls, hostnames, csr_filename, key_filename):
@@ -114,5 +115,16 @@ class CertTools():
 		crt_raw_text = subprocess.check_output([ "openssl", "x509", "-text", "-noout", "-in", csr_filename ])
 		return cls._rawtext_get_dnsnames(crt_raw_text)
 
+	@classmethod
+	def split_certificates(cls, crt_data):
+		text = crt_data.decode("ascii")
+		certificates = [ ]
+		for match in cls.CERT_REGEX.finditer(text):
+			crt_text = match.group(0)
+			crt = subprocess.check_output([ "openssl", "x509" ], input = crt_text.encode("ascii"))
+			certificates.append(crt)
+		return certificates
+
 if __name__ == "__main__":
-	print(UITools.choice([ ("ecdsa", "ECDSA key"), ("rsa", "RSA key") ], "Please select cryptosystem: "))
+	print(CertTools.split_certificates(open("x", "rb").read()))
+	#print(UITools.choice([ ("ecdsa", "ECDSA key"), ("rsa", "RSA key") ], "Please select cryptosystem: "))
