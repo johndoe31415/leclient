@@ -93,11 +93,11 @@ for request in config.requests:
 
 apache_template = ApacheTemplate(config)
 template = apache_template.render_http()
-with open(config.apache2_config_template_dir + "/001-leclient-http.conf", "w") as f:
+with open(config.apache2_config_template_dir + "/0010-leclient-http.conf", "w") as f:
 	f.write(template)
 
 for (conf_no, request) in enumerate(config.requests, 100):
-	filename = config.apache2_config_template_dir + "/%03d-%s.conf" % (conf_no, request["name"])
+	filename = config.apache2_config_template_dir + "/%04d-%s.conf" % (conf_no, request["name"])
 	with open(filename, "w") as f:
 		f.write(apache_template.render_https(request))
 

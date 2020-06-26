@@ -22,11 +22,14 @@
 import sys
 import subprocess
 import os
+import textwrap
 from FriendlyArgumentParser import FriendlyArgumentParser
 from Configuration import Configuration
 from Tools import CertTools
 
 parser = FriendlyArgumentParser(description = "Renew Let's Encrypt certificates.")
+parser.add_argument("--insecure-mode", action = "store_true", help = "Proceed with certificate renewal even if some security safeguards fail (like exposed private keys).")
+parser.add_argument("-n", "--dry-run", action = "store_true", help = "Perform all checks but do not actually try to renew certificates. Instead, just print to stdout if a certificate would have been renewed.")
 parser.add_argument("-d", "--config-dir", metavar = "dirname", type = str, default = "~/.config/leclient", help = "Specifies configuration directory to use. Defaults to %(default)s.")
 parser.add_argument("-v", "--verbose", action = "count", default = 0, help = "Increases verbosity. Can be specified multiple times to increase.")
 args = parser.parse_args(sys.argv[1:])
@@ -38,6 +41,24 @@ class CertificateRenewer():
 		self._config = Configuration(args.config_dir)
 		if not self._config.configured:
 			print("leclient has not yet been configured; run the 'configure' script first.", file = sys.stderr)
+			sys.exit(1)
+
+		self._sanity_check()
+
+	def _sanity_check(self):
+		any_key_readable = False
+		for request in self._config.requests:
+			try:
+				with open(request["server_key"]) as f:
+					key_readable = True
+					any_key_readable = True
+			except (FileNotFoundError, PermissionError):
+				key_readable = False
+			if key_readable:
+				print("Key file readable by client -- this is a security issue: %s" % (request["server_key"]))
+		if any_key_readable and (not self._args.insecure_mode):
+			print()
+			print("\n".join(textwrap.wrap("FATAL ERROR: Not proceeding with the renewal because there are exposed private keys. Please change their owner (and possibly permissions) and re-run leclient. Alternatively, you can force proceeding in insecure mode by using the '--insecure-mode' command line option, but this is not recommended.")))
 			sys.exit(1)
 
 	def _run_request(self, request):
@@ -57,18 +78,21 @@ class CertificateRenewer():
 			needs_renewal = False
 
 		if needs_renewal:
-			acme_tiny_bin = os.path.dirname(os.path.realpath(__file__)) + "/acme_tiny.py"
-			cmd = [ acme_tiny_bin, "--account-key", self._config.account_key, "--csr", request["server_csr"], "--acme-dir", self._config.challenge_dir ]
-			acme_output = subprocess.check_output(cmd)
-			certificate = subprocess.check_output([ "openssl", "x509", "-text" ], input = acme_output)
-			with open(request["server_crt"], "wb") as f:
-				f.write(certificate)
-			os.chmod(request["server_crt"], 0o644)
-			with open(request["server_crt_chain"], "wb") as f:
-				f.write(acme_output)
-			os.chmod(request["server_crt_chain"], 0o644)
-			with open(self._config.renew_trigger_file, "wb") as f:
-				pass
+			if not self._args.dry_run:
+				acme_tiny_bin = os.path.dirname(os.path.realpath(__file__)) + "/acme_tiny.py"
+				cmd = [ acme_tiny_bin, "--account-key", self._config.account_key, "--csr", request["server_csr"], "--acme-dir", self._config.challenge_dir ]
+				acme_output = subprocess.check_output(cmd)
+				certificate = subprocess.check_output([ "openssl", "x509", "-text" ], input = acme_output)
+				with open(request["server_crt"], "wb") as f:
+					f.write(certificate)
+				os.chmod(request["server_crt"], 0o644)
+				with open(request["server_crt_chain"], "wb") as f:
+					f.write(acme_output)
+				os.chmod(request["server_crt_chain"], 0o644)
+				with open(self._config.renew_trigger_file, "wb") as f:
+					pass
+			else:
+				print("Would renew %s, but not performing the request because in dry-run mode." % (request["server_csr"]))
 
 	def run(self):
 		for request in self._config.requests:
@@ -76,6 +100,3 @@ class CertificateRenewer():
 
 crn = CertificateRenewer(args)
 crn.run()
-
-
-
