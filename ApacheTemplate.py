@@ -21,34 +21,34 @@
 
 import os
 import datetime
+import mako.lookup
 
 class ApacheTemplate():
 	def __init__(self, config):
 		self._config = config
+		self._lookup = mako.lookup.TemplateLookup([ "." ], strict_undefined = True)
 
 	def _render(self, source_name, variables):
-		with open(source_name) as f:
-			template = f.read()
-		replacements = {
+		template = self._lookup.get_template(source_name)
+		variables.update({
 			"now":				datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-		}
-		replacements.update(variables)
-		for (src, dst) in replacements.items():
-			src_pattern = "${" + src + "}"
-			template = template.replace(src_pattern, dst)
-		return template
-
+		})
+		return template.render(**variables)
 
 	def render_http(self):
+		hostnames = set()
+		for request in self._config.requests:
+			hostnames |= set(request["hostnames"])
+		hostnames = sorted(hostnames)
 		return self._render("apache_config_template_http.conf", {
-			"hostname":			self._config.hostnames[0],
+			"hostnames":		hostnames,
 			"challenge_dir":	os.path.realpath(self._config.challenge_dir),
 		})
 
-	def render_https(self, hostname):
+	def render_https(self, request):
 		return self._render("apache_config_template_https.conf", {
-			"hostname":			hostname,
-			"cert_filename":	self._config.certificate_file,
-			"chain_filename":	self._config.certificate_chain_file,
-			"key_filename":		self._config.server_key,
+			"hostnames":		request["hostnames"],
+			"cert_filename":	request["server_crt"],
+			"chain_filename":	request["server_crt_chain"],
+			"key_filename":		request["server_key"],
 		})

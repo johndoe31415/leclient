@@ -27,9 +27,8 @@ from Configuration import Configuration
 from Tools import UITools, CertTools
 from ApacheTemplate import ApacheTemplate
 
-parser = FriendlyArgumentParser(description = "Initial setup of a Let's Encrypt client.")
+parser = FriendlyArgumentParser(description = "Tool for setting up the Let's Encrypt configuration using leclient.")
 parser.add_argument("-d", "--config-dir", metavar = "dirname", type = str, default = "~/.config/leclient", help = "Specifies configuration directory to use. Defaults to %(default)s.")
-parser.add_argument("-k", "--key-file", metavar = "filename", type = str, help = "Specifies the PEM encoded filename that contains the server key. By default is placed in the keys/ subdirectory of the config directory.")
 parser.add_argument("-v", "--verbose", action = "count", default = 0, help = "Increases verbosity. Can be specified multiple times to increase.")
 args = parser.parse_args(sys.argv[1:])
 
@@ -49,39 +48,58 @@ config = Configuration(args.config_dir)
 if not config.configured:
 	print("This is the first-time configuration of leclient.")
 	print("Please answer the following questions to enable configuration:")
-	hostnames = input("Hostnames (separate by space): ")
-	hostnames = hostnames.split()
-	config.set_initial_config(hostnames, key_file = args.key_file)
+
+	all_hosts = [ ]
+	while True:
+		hostnames = input("Hostnames for certificate #%d (separate by space, RETURN to finish): " % (len(all_hosts) + 1))
+		hostnames = hostnames.split()
+		if len(hostnames) == 0:
+			break
+
+		all_hosts.append(hostnames)
+
+	if len(all_hosts) == 0:
+		print("No hostnames specified, cannot continue.", file = sys.stderr)
+		sys.exit(1)
+
+	config.set_initial_config(all_hosts)
 	config.write()
 
 if not os.path.exists(config.account_key):
 	if UITools.confirm("Account key %s does not exist. Create now (y/n)? " % (config.account_key)):
 		genkey("rsa", 4096, config.account_key)
 
-if not os.path.exists(config.server_key):
-	if UITools.confirm("Request key %s does not exist. Create now (y/n)? " % (config.server_key)):
-		(keytype, param) = UITools.choice([
-			(("ecc", "secp384r1"), "ECDSA on P-384"),
-			(("ecc", "secp256r1"), "ECDSA on P-256"),
-			(("rsa", 2048), "RSA-2048"),
-			(("rsa", 3072), "RSA-3072"),
-			(("rsa", 4096), "RSA-4096"),
-		], "Select cryptosystem: ")
-		genkey(keytype, param, config.server_key)
+for request in config.requests:
+	if not os.path.exists(request["server_key"]):
+		if len(request["hostnames"]) == 1:
+			host_list = "host %s" % (request["hostnames"][0])
+		else:
+			host_list = "hosts %s" % (", ".join(request["hostnames"]))
+		if UITools.confirm("Request key %s (%s) does not exist. Create now (y/n)? " % (request["server_key"], host_list)):
+			(keytype, param) = UITools.choice([
+				(("ecc", "secp384r1"), "ECDSA on P-384"),
+				(("ecc", "secp256r1"), "ECDSA on P-256"),
+				(("rsa", 4096), "RSA-4096"),
+				(("rsa", 3072), "RSA-3072"),
+				(("rsa", 2048), "RSA-2048"),
+			], "Select cryptosystem: ")
+			genkey(keytype, param, request["server_key"])
 
-if (not os.path.exists(config.server_csr)) or (CertTools.csr_get_hostnames(config.server_csr) != set(config.hostnames)):
-	if args.verbose >= 1:
-		print("Creating CSR...", file = sys.stderr)
-	CertTools.create_csr(config.hostnames, config.server_csr, config.server_key)
+for request in config.requests:
+	if (not os.path.exists(request["server_csr"])) or (CertTools.csr_get_hostnames(request["server_csr"]) != set(request["hostnames"])):
+		if args.verbose >= 1:
+			print("Creating CSR %s..." % (request["server_csr"]), file = sys.stderr)
+		CertTools.create_csr(request["hostnames"], request["server_csr"], request["server_key"])
 
 apache_template = ApacheTemplate(config)
 template = apache_template.render_http()
-with open(config.apache2_template_dir + "/001-leclient-http.conf", "w") as f:
+with open(config.apache2_config_template_dir + "/001-leclient-http.conf", "w") as f:
 	f.write(template)
-for (conf_no, hostname) in enumerate(config.hostnames, 100):
-	filename = config.apache2_template_dir + "/%03d-%s.conf" % (conf_no, hostname)
+
+for (conf_no, request) in enumerate(config.requests, 100):
+	filename = config.apache2_config_template_dir + "/%03d-%s.conf" % (conf_no, request["name"])
 	with open(filename, "w") as f:
-		f.write(apache_template.render_https(hostname))
+		f.write(apache_template.render_https(request))
 
 if args.verbose >= 2:
 	print("Configuration finished: %s" % (config.base_dir))

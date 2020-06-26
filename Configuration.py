@@ -22,6 +22,7 @@
 import os
 import json
 import contextlib
+import collections
 
 class Configuration():
 	def __init__(self, dirname):
@@ -32,11 +33,15 @@ class Configuration():
 				self._config = json.load(f)
 		except FileNotFoundError:
 			self._config = None
-		self._create_dir()
+		self._create_dirs()
 
 	@property
 	def base_dir(self):
 		return self._dirname
+
+	@property
+	def requests(self):
+		return iter(self._config["requests"])
 
 	@property
 	def challenge_dir(self):
@@ -47,70 +52,70 @@ class Configuration():
 		return self._config["account_key"]
 
 	@property
-	def server_key(self):
-		return self._config["server_key"]
+	def renew_days_before_expiration(self):
+		return self._config["renew_days_before_expiration"]
 
 	@property
-	def server_csr(self):
-		return self._config["server_csr"]
+	def renew_trigger_file(self):
+		return self._config["renew_trigger_file"]
 
 	@property
-	def certificate_file(self):
-		return self._config["certificate_file"]
-
-	@property
-	def certificate_chain_file(self):
-		return self._config["certificate_chain_file"]
-
-	@property
-	def renew_days_before_expiry(self):
-		return self._config["renew_days_before_expiry"]
-
-	@property
-	def renewed_trigger_file(self):
-		return self._config["renewed_trigger_file"]
-
-	@property
-	def hostnames(self):
-		return self._config["hostnames"]
-
-	@property
-	def apache2_template_dir(self):
-		return self._config["apache2_template_dir"]
+	def apache2_config_template_dir(self):
+		return self._config["apache2_config_template_dir"]
 
 	@property
 	def configured(self):
 		return self._config is not None
 
-	def _create_dir(self):
+	def _create_dir(self, dirname):
 		with contextlib.suppress(FileExistsError):
-			os.makedirs(self._dirname)
-			os.chmod(self._dirname, 0o700)
+			os.makedirs(dirname)
+			os.chmod(dirname, 0o700)
 
+	def _create_filedir(self, filename):
+		return self._create_dir(os.path.dirname(filename))
+
+	def _create_dirs(self):
+		self._create_dir(self._dirname)
 		if self.configured:
-			with contextlib.suppress(FileExistsError):
-				os.makedirs(self.challenge_dir)
-			with contextlib.suppress(FileExistsError):
-				os.makedirs(self.apache2_template_dir)
+			self._create_dir(self.challenge_dir)
+			self._create_filedir(self.account_key)
+			self._create_filedir(self.renew_trigger_file)
+			self._create_dir(self.apache2_config_template_dir)
+			for request in self.requests:
+				self._create_filedir(request["server_crt"])
+				self._create_filedir(request["server_crt_chain"])
+				self._create_filedir(request["server_csr"])
+				self._create_filedir(request["server_key"])
 
 	def write(self):
 		with open(self._filename, "w") as f:
 			json.dump(self._config, f, indent = 4, sort_keys = True)
 
-	def set_initial_config(self, hostnames, key_file = None):
-		if key_file is None:
-			key_file = self._dirname + "/keys/server.key"
-		else:
-			key_file = os.path.realpath(key_file)
-		self._config = {
-			"hostnames":						hostnames,
-			"challenge_dir":					self._dirname + "/challenges",
-			"account_key":						self._dirname + "/keys/account.key",
-			"server_key":						key_file,
-			"server_csr":						self._dirname + "/server.csr",
-			"certificate_file":					self._dirname + "/certificate.pem",
-			"certificate_chain_file":			self._dirname + "/certificate_chain.pem",
-			"renewed_trigger_file":				self._dirname + "/csr_renewed.trigger",
-			"renew_days_before_expiry":			30,
-			"apache2_template_dir":				self._dirname + "/conf",
-		}
+	def set_initial_config(self, hostnames_list):
+		primary_hostnames = set()
+		requests = [ ]
+		for hostnames in hostnames_list:
+			hostname = hostnames[0]
+			if hostname in primary_hostnames:
+				raise ValueError("Hostname '%s' appears twice as primary hostname, this is not allowed.")
+			primary_hostnames.add(hostname)
+			request = collections.OrderedDict((
+				("name", hostname),
+				("hostnames", hostnames),
+				("server_crt", "%s/crt/%s.crt" % (self._dirname, hostname)),
+				("server_crt_chain", "%s/crt_chain/%s.crt" % (self._dirname, hostname)),
+				("server_key", "%s/key/%s.key" % (self._dirname, hostname)),
+				("server_csr", "%s/csr/%s.csr" % (self._dirname, hostname)),
+			))
+			requests.append(request)
+
+		self._config = collections.OrderedDict((
+			("challenge_dir",					self._dirname + "/challenges"),
+			("account_key",						self._dirname + "/account.key"),
+			("requests",						requests),
+			("renew_trigger_file",				self._dirname + "/crt_renewed.trigger"),
+			("renew_days_before_expiration",	30),
+			("apache2_config_template_dir",		self._dirname + "/conf"),
+		))
+		self._create_dirs()
