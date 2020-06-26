@@ -1,0 +1,10 @@
+[Unit]
+Description=Run leclient Let's Encrypt certificate update daily
+After=network-online.target
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

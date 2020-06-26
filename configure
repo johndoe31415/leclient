@@ -22,10 +22,12 @@
 import os
 import sys
 import subprocess
+import collections
+import contextlib
 from FriendlyArgumentParser import FriendlyArgumentParser
 from Configuration import Configuration
 from Tools import UITools, CertTools
-from ApacheTemplate import ApacheTemplate
+from TemplateGenerator import TemplateGenerator
 
 parser = FriendlyArgumentParser(description = "Tool for setting up the Let's Encrypt configuration using leclient.")
 parser.add_argument("-d", "--config-dir", metavar = "dirname", type = str, default = "~/.config/leclient", help = "Specifies configuration directory to use. Defaults to %(default)s.")
@@ -49,20 +51,31 @@ if not config.configured:
 	print("This is the first-time configuration of leclient.")
 	print("Please answer the following questions to enable configuration:")
 
-	all_hosts = [ ]
+	hostname_dict = collections.OrderedDict()
+
 	while True:
-		hostnames = input("Hostnames for certificate #%d (separate by space, RETURN to finish): " % (len(all_hosts) + 1))
+		hostnames = input("Hostnames for certificate #%d (separate by space, RETURN to finish): " % (len(hostname_dict) + 1))
 		hostnames = hostnames.split()
 		if len(hostnames) == 0:
 			break
 
-		all_hosts.append(hostnames)
+		while True:
+			suggested_name = hostnames[0]
+			name = input("Name for certificate #%d (RETURN defaults to %s): " % (len(hostname_dict) + 1, suggested_name))
+			if name == "":
+				name = suggested_name
+			if name not in hostname_dict:
+				break
+			else:
+				print("Name already taken, please choose a different one.")
 
-	if len(all_hosts) == 0:
+		hostname_dict[name] = hostnames
+
+	if len(hostname_dict) == 0:
 		print("No hostnames specified, cannot continue.", file = sys.stderr)
 		sys.exit(1)
 
-	config.set_initial_config(all_hosts)
+	config.set_initial_config(hostname_dict)
 	config.write()
 
 if not os.path.exists(config.account_key):
@@ -86,20 +99,39 @@ for request in config.requests:
 			genkey(keytype, param, request["server_key"])
 
 for request in config.requests:
-	if (not os.path.exists(request["server_csr"])) or (CertTools.csr_get_hostnames(request["server_csr"]) != set(request["hostnames"])):
+	csr_exists = os.path.exists(request["server_csr"])
+	hostnames_have_changed = csr_exists and (CertTools.csr_get_hostnames(request["server_csr"]) != set(request["hostnames"]))
+	if hostnames_have_changed:
+		print("Hostnames have changed for '%s', recreating CSR." % (request["name"]))
+	if (not csr_exists) or hostnames_have_changed:
 		if args.verbose >= 1:
 			print("Creating CSR %s..." % (request["server_csr"]), file = sys.stderr)
 		CertTools.create_csr(request["hostnames"], request["server_csr"], request["server_key"])
 
-apache_template = ApacheTemplate(config)
-template = apache_template.render_http()
+template_generator = TemplateGenerator(config)
+template = template_generator.render_http()
 with open(config.apache2_config_template_dir + "/0010-leclient-http.conf", "w") as f:
 	f.write(template)
 
 for (conf_no, request) in enumerate(config.requests, 100):
-	filename = config.apache2_config_template_dir + "/%04d-%s.conf" % (conf_no, request["name"])
+	filename = config.apache2_config_template_dir + "/%04d-leclient-https-%s.conf" % (conf_no, request["name"])
 	with open(filename, "w") as f:
-		f.write(apache_template.render_https(request))
+		f.write(template_generator.render_https(request))
+
+systemd_service_file = os.path.expanduser("~/.local/share/systemd/user/leclient.service")
+systemd_timer_file = os.path.expanduser("~/.local/share/systemd/user/leclient.timer")
+if (not os.path.isfile(systemd_service_file)) or (not os.path.isfile(systemd_timer_file)):
+	if UITools.confirm("systemd unit not configured. Create now (y/n)? "):
+		with contextlib.suppress(FileExistsError):
+			os.makedirs(os.path.dirname(systemd_service_file))
+		executable = os.path.realpath(os.path.dirname(__file__)) + "/renew"
+		with open(systemd_service_file, "w") as f:
+			f.write(template_generator.render_systemd_service(executable))
+		with open(systemd_timer_file, "w") as f:
+			f.write(template_generator.render_systemd_timer())
+		subprocess.check_call([ "systemctl", "--user", "daemon-reload" ])
+		subprocess.check_call([ "systemctl", "--user", "enable", "leclient.timer" ])
+		subprocess.check_call([ "systemctl", "--user", "start", "leclient.timer" ])
 
 if args.verbose >= 2:
 	print("Configuration finished: %s" % (config.base_dir))

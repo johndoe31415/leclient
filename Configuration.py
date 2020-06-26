@@ -27,7 +27,7 @@ import collections
 class Configuration():
 	def __init__(self, dirname):
 		self._dirname = os.path.realpath(os.path.expanduser(dirname))
-		self._filename = self._dirname + "/leclient.json"
+		self._filename = self._dirname + "/config.json"
 		try:
 			with open(self._filename) as f:
 				self._config = json.load(f)
@@ -92,21 +92,16 @@ class Configuration():
 		with open(self._filename, "w") as f:
 			json.dump(self._config, f, indent = 4, sort_keys = True)
 
-	def set_initial_config(self, hostnames_list):
-		primary_hostnames = set()
+	def set_initial_config(self, hostname_dict):
 		requests = [ ]
-		for hostnames in hostnames_list:
-			hostname = hostnames[0]
-			if hostname in primary_hostnames:
-				raise ValueError("Hostname '%s' appears twice as primary hostname, this is not allowed.")
-			primary_hostnames.add(hostname)
+		for (name, hostnames) in hostname_dict.items():
 			request = collections.OrderedDict((
-				("name", hostname),
+				("name", name),
 				("hostnames", hostnames),
-				("server_crt", "%s/crt/%s.crt" % (self._dirname, hostname)),
-				("server_crt_chain", "%s/crt_chain/%s.crt" % (self._dirname, hostname)),
-				("server_key", "%s/key/%s.key" % (self._dirname, hostname)),
-				("server_csr", "%s/csr/%s.csr" % (self._dirname, hostname)),
+				("server_crt", "%s/crt/%s.crt" % (self._dirname, name)),
+				("server_crt_chain", "%s/crt_chain/%s.crt" % (self._dirname, name)),
+				("server_key", "%s/key/%s.key" % (self._dirname, name)),
+				("server_csr", "%s/csr/%s.csr" % (self._dirname, name)),
 			))
 			requests.append(request)
 

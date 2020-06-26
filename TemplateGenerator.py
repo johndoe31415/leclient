@@ -23,7 +23,7 @@ import os
 import datetime
 import mako.lookup
 
-class ApacheTemplate():
+class TemplateGenerator():
 	def __init__(self, config):
 		self._config = config
 		self._lookup = mako.lookup.TemplateLookup([ "." ], strict_undefined = True)
@@ -52,3 +52,11 @@ class ApacheTemplate():
 			"chain_filename":	request["server_crt_chain"],
 			"key_filename":		request["server_key"],
 		})
+
+	def render_systemd_service(self, executable):
+		return self._render("systemd.service", {
+			"renew_executable":	executable,
+		})
+
+	def render_systemd_timer(self):
+		return self._render("systemd.timer", { })

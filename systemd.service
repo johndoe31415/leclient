@@ -1,0 +1,7 @@
+[Unit]
+Description=Run leclient Let's Encrypt certificate update
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${renew_executable}
