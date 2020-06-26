@@ -1,0 +1,66 @@
+#!/usr/bin/python3
+#	leclient - Let's encrypt frontend tooling and configuration
+#	Copyright (C) 2020-2020 Johannes Bauer
+#
+#	This file is part of leclient.
+#
+#	leclient is free software; you can redistribute it and/or modify
+#	it under the terms of the GNU General Public License as published by
+#	the Free Software Foundation; this program is ONLY licensed under
+#	version 3 of the License, later versions are explicitly excluded.
+#
+#	leclient is distributed in the hope that it will be useful,
+#	but WITHOUT ANY WARRANTY; without even the implied warranty of
+#	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#	GNU General Public License for more details.
+#
+#	You should have received a copy of the GNU General Public License
+#	along with leclient. If not, see <http://www.gnu.org/licenses/>.
+#
+#	Johannes Bauer <JohannesBauer@gmx.de>
+
+import sys
+import subprocess
+import os
+from FriendlyArgumentParser import FriendlyArgumentParser
+from Configuration import Configuration
+from Tools import CertTools
+
+parser = FriendlyArgumentParser(description = "Renew Let's Encrypt certificates.")
+parser.add_argument("-d", "--config-dir", metavar = "dirname", type = str, default = "~/.config/leclient", help = "Specifies configuration directory to use. Defaults to %(default)s.")
+parser.add_argument("-v", "--verbose", action = "count", default = 0, help = "Increases verbosity. Can be specified multiple times to increase.")
+args = parser.parse_args(sys.argv[1:])
+
+config = Configuration(args.config_dir)
+if not config.configured:
+	print("leclient has not yet been configured; run the 'configure' script first.", file = sys.stderr)
+	sys.exit(1)
+
+needs_renewal = True
+if not os.path.isfile(config.certificate_file):
+	if args.verbose >= 1:
+		print("Renewing certificate %s because it does not exist yet." % (config.certificate_file), file = sys.stderr)
+elif CertTools.crt_expires_in_less_than_days(config.certificate_file, config.renew_days_before_expiry):
+	if args.verbose >= 1:
+		print("Renewing certificate %s because it expires in less than %d days." % (config.certificate_file, config.renew_days_before_expiry), file = sys.stderr)
+elif CertTools.crt_get_hostnames(config.certificate_file) != CertTools.csr_get_hostnames(config.server_csr):
+	if args.verbose >= 1:
+		print("Renewing certificate %s because the CSR has different SAN DNS names than the current certificate." % (config.certificate_file), file = sys.stderr)
+else:
+	if args.verbose >= 2:
+		print("No current reason to renew certificate %s." % (config.certificate_file), file = sys.stderr)
+	needs_renewal = False
+
+if needs_renewal:
+	acme_tiny_bin = os.path.dirname(os.path.realpath(__file__)) + "/acme_tiny.py"
+	cmd = [ acme_tiny_bin, "--account-key", config.account_key, "--csr", config.server_csr, "--acme-dir", config.challenge_dir ]
+	acme_output = subprocess.check_output(cmd)
+	certificate = subprocess.check_output([ "openssl", "x509", "-text" ], input = acme_output)
+	with open(config.certificate_file, "wb") as f:
+		f.write(certificate)
+	os.chmod(config.certificate_file, 0o644)
+	with open(config.certificate_chain_file, "wb") as f:
+		f.write(acme_output)
+	os.chmod(config.certificate_chain_file, 0o644)
+	with open(config.renewed_trigger_file, "wb") as f:
+		pass
