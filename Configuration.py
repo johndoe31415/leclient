@@ -85,6 +85,7 @@ class Configuration():
 			for request in self.requests:
 				self._create_filedir(request["server_crt"])
 				self._create_filedir(request["server_crt_chain"])
+				self._create_filedir(request["server_crt_fullchain"])
 				self._create_filedir(request["server_csr"])
 				self._create_filedir(request["server_key"])
 
@@ -100,6 +101,7 @@ class Configuration():
 				("hostnames", hostnames),
 				("server_crt", "%s/crt/%s.crt" % (self._dirname, name)),
 				("server_crt_chain", "%s/crt_chain/%s.crt" % (self._dirname, name)),
+				("server_crt_fullchain", "%s/crt_fullchain/%s.crt" % (self._dirname, name)),
 				("server_key", "%s/key/%s.key" % (self._dirname, name)),
 				("server_csr", "%s/csr/%s.csr" % (self._dirname, name)),
 			))

@@ -95,6 +95,9 @@ class CertificateRenewer():
 				with open(request["server_crt_chain"], "wb") as f:
 					for certificate in certificates[1:]:
 						f.write(certificate)
+				with open(request["server_crt_fullchain"], "wb") as f:
+					for certificate in certificates:
+						f.write(certificate)
 				os.chmod(request["server_crt_chain"], 0o644)
 				with open(self._config.renew_trigger_file, "wb") as f:
 					pass
