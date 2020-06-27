@@ -1,0 +1,8 @@
+[Unit]
+Description=Restart services after certificates are renewed
+
+[Service]
+ExecStart=/bin/systemctl restart apache2
+
+[Install]
+WantedBy=multi-user.target

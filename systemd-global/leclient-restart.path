@@ -1,0 +1,5 @@
+[Path]
+PathChanged=/home/letsencrypt/.config/leclient/crt_renewed.trigger
+
+[Install]
+WantedBy=multi-user.target
