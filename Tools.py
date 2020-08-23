@@ -52,7 +52,7 @@ class UITools():
 class CertTools():
 	HOSTNAME_REGEX = re.compile(r"X509v3 Subject Alternative Name:[ \t]*\n(?P<names>[^\n]+)", flags = re.MULTILINE)
 	DNSNAME_SPLITTER = re.compile(r", ")
-	NOT_AFTER_REGEX = re.compile(r"notAfter=(?P<month>[A-Za-z]{3}) (?P<day>\d+) (?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2}) (?P<year>\d{4}) GMT")
+	NOT_AFTER_REGEX = re.compile(r"notAfter=(?P<month>[A-Za-z]{3})\s+(?P<day>\d+)\s+(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2}) (?P<year>\d{4}) GMT")
 	MONTHS = { name: monthno for (monthno, name) in enumerate([ "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec" ], 1) }
 	CERT_REGEX = re.compile("^-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----$", flags = re.MULTILINE | re.DOTALL)
 
