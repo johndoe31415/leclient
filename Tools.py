@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #	leclient - Let's encrypt frontend tooling and configuration
-#	Copyright (C) 2020-2020 Johannes Bauer
+#	Copyright (C) 2020-2021 Johannes Bauer
 #
 #	This file is part of leclient.
 #
@@ -97,6 +97,7 @@ class CertTools():
 	def _rawtext_get_dnsnames(cls, raw_text):
 		text = raw_text.decode()
 		match = cls.HOSTNAME_REGEX.search(text)
+		match = match.groupdict()
 		names = match["names"].strip()
 		split_names = cls.DNSNAME_SPLITTER.split(names)
 		dns_names = set()
